@@ -75,9 +75,7 @@ int get_macroblock_modes()
 
 			if ((!(decoder.frame_pred_frame_dct)) &&
 				(decoder.picture_structure == FRAME_PICTURE))
-			{
 				macroblock_modes |= GETBITS(1) * DCT_TYPE_INTERLACED;
-			}
 			return macroblock_modes;
 
 		case P_TYPE:
@@ -92,33 +90,23 @@ int get_macroblock_modes()
 			if (decoder.picture_structure != FRAME_PICTURE)
 			{
 				if (macroblock_modes & MACROBLOCK_MOTION_FORWARD)
-				{
 					macroblock_modes |= GETBITS(2) * MOTION_TYPE_BASE;
-				}
-
-				return macroblock_modes;
 			}
 			else if (decoder.frame_pred_frame_dct)
 			{
 				if (macroblock_modes & MACROBLOCK_MOTION_FORWARD)
 					macroblock_modes |= MC_FRAME;
-
-				return macroblock_modes;
 			}
 			else
 			{
 				if (macroblock_modes & MACROBLOCK_MOTION_FORWARD)
-				{
 					macroblock_modes |= GETBITS(2) * MOTION_TYPE_BASE;
-				}
 
 				if (macroblock_modes & (MACROBLOCK_INTRA | MACROBLOCK_PATTERN))
-				{
 					macroblock_modes |= GETBITS(1) * DCT_TYPE_INTERLACED;
-				}
 
-				return macroblock_modes;
 			}
+			return macroblock_modes;
 
 		case B_TYPE:
 			macroblock_modes = UBITS(6);
@@ -132,17 +120,10 @@ int get_macroblock_modes()
 			if (decoder.picture_structure != FRAME_PICTURE)
 			{
 				if (!(macroblock_modes & MACROBLOCK_INTRA))
-				{
 					macroblock_modes |= GETBITS(2) * MOTION_TYPE_BASE;
-				}
-				return (macroblock_modes | (tab->len << 16));
 			}
 			else if (decoder.frame_pred_frame_dct)
-			{
-				/* if (! (macroblock_modes & MACROBLOCK_INTRA)) */
 				macroblock_modes |= MC_FRAME;
-				return (macroblock_modes | (tab->len << 16));
-			}
 			else
 			{
 				if (macroblock_modes & MACROBLOCK_INTRA) goto intra;
@@ -150,12 +131,10 @@ int get_macroblock_modes()
 				macroblock_modes |= GETBITS(2) * MOTION_TYPE_BASE;
 
 				if (macroblock_modes & (MACROBLOCK_INTRA | MACROBLOCK_PATTERN))
-				{
 intra:
 					macroblock_modes |= GETBITS(1) * DCT_TYPE_INTERLACED;
-				}
-				return (macroblock_modes | (tab->len << 16));
 			}
+			return (macroblock_modes | (tab->len << 16));
 
 		case D_TYPE:
 			macroblock_modes = GETBITS(1);
@@ -168,20 +147,19 @@ intra:
 			return (MACROBLOCK_INTRA | (1 << 16));
 
 		default:
-			return 0;
+			break;
 	}
+
+	return 0;
 }
 
 static __fi int get_quantizer_scale()
 {
-	int quantizer_scale_code;
-
-	quantizer_scale_code = GETBITS(5);
+	int quantizer_scale_code = GETBITS(5);
 
 	if (decoder.q_scale_type)
 		return non_linear_quantizer_scale [quantizer_scale_code];
-	else
-		return quantizer_scale_code << 1;
+	return quantizer_scale_code << 1;
 }
 
 static __fi int get_coded_block_pattern()
@@ -211,13 +189,9 @@ int __fi get_motion_delta(const int f_code)
 		return 0x00010000;
 	}
 	else if ((code & 0xf000) || ((code & 0xfc00) == 0x0c00))
-	{
 		tab = MV_4 + UBITS(4);
-	}
 	else
-	{
 		tab = MV_10 + UBITS(10);
-	}
 
 	delta = tab->delta + 1;
 	DUMPBITS(tab->len);
@@ -329,9 +303,7 @@ static __fi int get_chroma_dc_dct_diff()
 		dc_diff = GETBITS(size);
 
 		if ((dc_diff & (1<<(size-1)))==0)
-		{
 			dc_diff-= (1<<size) - 1;
-		}
 	}
 
 	return dc_diff;
@@ -700,6 +672,13 @@ __fi bool mpeg2sliceIDEC()
 {
 	u16 code;
 
+	// If FROM_IPU is running and there's stuff in the output fifo
+	// wait for FROM_IPU to grab it.
+	// Tekken 4 does this then kills the IDEC command after IPU0 finishes
+	// so it expects no extra data to have been processed, the processing is probably triggered by Output FIFO requests
+	if (ipu0ch.chcr.STR && ipuRegs.ctrl.OFC)
+		return false;
+
 	switch (ipu_cmd.pos[0])
 	{
 	case 0:
@@ -838,7 +817,6 @@ __fi bool mpeg2sliceIDEC()
 					ipu_cmd.pos[1] = 2;
 					return false;
 				}
-
 				mbaCount = 0;
 			}
 			// Fall through
@@ -904,6 +882,9 @@ __fi bool mpeg2sliceIDEC()
 
 			ipu_cmd.pos[1] = 0;
 			ipu_cmd.pos[2] = 0;
+
+			if ((ipu0ch.qwc - ipuRegs.ctrl.OFC) <= 0)
+				return false;
 		}
 		// Fall through
 
@@ -935,7 +916,9 @@ finish_idec:
 			return false;
 		}
 
+#ifndef MSB_FIRST
 		ipuRegs.top = BigEndian(ipuRegs.top);
+#endif
 		break;
 
 	jNO_DEFAULT;
@@ -947,6 +930,13 @@ finish_idec:
 __fi bool mpeg2_slice()
 {
 	int DCT_offset, DCT_stride;
+
+	// If FROM_IPU is running and there's stuff in the output fifo
+	// wait for FROM_IPU to grab it.
+	// Tekken 4 does this then kills the IDEC command after IPU0 finishes
+	// so it expects no extra data to have been processed, the processing is probably triggered by Output FIFO requests
+	if (ipu0ch.chcr.STR && ipuRegs.ctrl.OFC)
+		return false;
 
 	macroblock_8& mb8 = decoder.mb8;
 	macroblock_16& mb16 = decoder.mb16;
@@ -1204,7 +1194,9 @@ __fi bool mpeg2_slice()
 			return false;
 		}
 
+#ifndef MSB_FIRST
 		ipuRegs.top = BigEndian(ipuRegs.top);
+#endif
 		break;
 	}
 

@@ -21,27 +21,11 @@
 u32 s_iLastCOP0Cycle = 0;
 u32 s_iLastPERFCycle[2] = { 0, 0 };
 
-// Updates the CPU's mode of operation (either, Kernel, Supervisor, or User modes).
-// Currently the different modes are not implemented.
-// Given this function is called so much, it's commented out for now. (rama)
-__ri void cpuUpdateOperationMode() {
-
-	//u32 value = cpuRegs.CP0.n.Status.val;
-
-	//if (value & 0x06 ||
-	//	(value & 0x18) == 0) { // Kernel Mode (KSU = 0 | EXL = 1 | ERL = 1)*/
-	//	memSetKernelMode();	// Kernel memory always
-	//} else { // User Mode
-	//	memSetUserMode();
-	//}
-}
-
 void __fastcall WriteCP0Status(u32 value) {
 
 	//DMA_LOG("COP0 Status write = 0x%08x", value);
 
 	cpuRegs.CP0.n.Status.val = value;
-    cpuUpdateOperationMode();
     cpuSetNextEventDelta(4);
 }
 
@@ -70,55 +54,21 @@ static __fi bool PERF_ShouldCountEvent( uint evt )
 {
 	switch( evt )
 	{
-		// This is a rough table of actions for various PCR modes.  Some of these
-		// can be implemented more accurately later.  Others (WBBs in particular)
-		// probably cannot without some severe complications.
-
-		// left sides are PCR0 / right sides are PCR1
-
 		case 1:		// cpu cycle counter.
 		case 2:		// single/dual instruction issued
 		case 3:		// Branch issued / Branch mispredicated
-			return true;
-
-		case 4:		// BTAC/TLB miss
-		case 5:		// ITLB/DTLB miss
-		case 6:		// Data/Instruction cache miss
-			return false;
-
-		case 7:		// Access to DTLB / WBB single request fail
-		case 8:		// Non-blocking load / WBB burst request fail
-		case 9:
-		case 10:
-			return false;
-
-		case 11:	// CPU address bus busy / CPU data bus busy
-			return false;
-
 		case 12:	// Instruction completed
 		case 13:	// non-delayslot instruction completed
 		case 14:	// COP2/COP1 instruction complete
 		case 15:	// Load/Store completed
 			return true;
+		default:
+			break;
 	}
 
 	return false;
 }
 
-// Diagnostics for event modes that we just ignore for now.  Using these perf units could
-// cause compat issues in some very odd/rare games, so if this msg comes up who knows,
-// might save some debugging effort. :)
-void COP0_DiagnosticPCCR()
-{
-#ifndef NDEBUG
-	if( cpuRegs.PERF.n.pccr.b.Event0 >= 7 && cpuRegs.PERF.n.pccr.b.Event0 <= 10 )
-		log_cb(RETRO_LOG_WARN, "PERF/PCR0 Unsupported Update Event Mode = 0x%x\n", cpuRegs.PERF.n.pccr.b.Event0 );
-
-	if( cpuRegs.PERF.n.pccr.b.Event1 >= 7 && cpuRegs.PERF.n.pccr.b.Event1 <= 10 )
-		log_cb(RETRO_LOG_WARN, "PERF/PCR1 Unsupported Update Event Mode = 0x%x\n", cpuRegs.PERF.n.pccr.b.Event1 );
-#endif
-}
-extern int branch;
 __fi void COP0_UpdatePCCR()
 {
 	// Counting and counter exceptions are not performed if we are currently executing a Level 2 exception (ERL)
@@ -147,39 +97,6 @@ __fi void COP0_UpdatePCCR()
 			//u32 prev = cpuRegs.PERF.n.pcr0;
 			cpuRegs.PERF.n.pcr0 += incr;
 			s_iLastPERFCycle[0] = cpuRegs.cycle;
-
-			//prev ^= (1UL<<31);		// XOR is fun!
-			//if( (prev & cpuRegs.PERF.n.pcr0) & (1UL<<31) )
-			if((cpuRegs.PERF.n.pcr0 & 0x80000000))
-			{
-				// TODO: Vector to the appropriate exception here.
-				// This code *should* be correct, but is untested (and other parts of the emu are
-				// not prepared to handle proper Level 2 exception vectors yet)
-
-				//branch == 1 is probably not the best way to check for the delay slot, but it beats nothing! (Refraction)
-			/*	if( branch == 1 )
-				{
-					cpuRegs.CP0.n.ErrorEPC = cpuRegs.pc - 4;
-					cpuRegs.CP0.n.Cause |= 0x40000000;
-				}
-				else
-				{
-					cpuRegs.CP0.n.ErrorEPC = cpuRegs.pc;
-					cpuRegs.CP0.n.Cause &= ~0x40000000;
-				}
-
-				if( cpuRegs.CP0.n.Status.b.DEV )
-				{
-					// Bootstrap vector
-					cpuRegs.pc = 0xbfc00280;
-				}
-				else
-				{
-					cpuRegs.pc = 0x80000080;
-				}
-				cpuRegs.CP0.n.Status.b.ERL = 1;
-				cpuRegs.CP0.n.Cause |= 0x20000;*/
-			}
 		}
 	}
 
@@ -197,37 +114,6 @@ __fi void COP0_UpdatePCCR()
 			cpuRegs.PERF.n.pcr1 += incr;
 			s_iLastPERFCycle[1] = cpuRegs.cycle;
 
-			if( (cpuRegs.PERF.n.pcr1 & 0x80000000))
-			{
-				// TODO: Vector to the appropriate exception here.
-				// This code *should* be correct, but is untested (and other parts of the emu are
-				// not prepared to handle proper Level 2 exception vectors yet)
-
-				//branch == 1 is probably not the best way to check for the delay slot, but it beats nothing! (Refraction)
-
-				/*if( branch == 1 )
-				{
-					cpuRegs.CP0.n.ErrorEPC = cpuRegs.pc - 4;
-					cpuRegs.CP0.n.Cause |= 0x40000000;
-				}
-				else
-				{
-					cpuRegs.CP0.n.ErrorEPC = cpuRegs.pc;
-					cpuRegs.CP0.n.Cause &= ~0x40000000;
-				}
-
-				if( cpuRegs.CP0.n.Status.b.DEV )
-				{
-					// Bootstrap vector
-					cpuRegs.pc = 0xbfc00280;
-				}
-				else
-				{
-					cpuRegs.pc = 0x80000080;
-				}
-				cpuRegs.CP0.n.Status.b.ERL = 1;
-				cpuRegs.CP0.n.Cause |= 0x20000;*/
-			}
 		}
 	}
 }
@@ -507,7 +393,6 @@ void MTC0()
 				// Updates PCRs and sets the PCCR.
 				COP0_UpdatePCCR();
 				cpuRegs.PERF.n.pccr.val = cpuRegs.GPR.r[_Rt_].UL[0];
-				COP0_DiagnosticPCCR();
 			}
 			else if (0 == (_Imm_ & 2)) // MTPC 0, only LSB of register matters
 			{
@@ -564,7 +449,6 @@ void ERET() {
 		cpuRegs.pc = cpuRegs.CP0.n.EPC;
 		cpuRegs.CP0.n.Status.b.EXL = 0;
 	}
-	cpuUpdateOperationMode();
 	cpuSetNextEventDelta(4);
 	intSetBranch();
 }

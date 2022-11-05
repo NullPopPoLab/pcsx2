@@ -41,8 +41,6 @@ int PlayMode;
 
 bool has_to_call_irq = false;
 
-bool psxmode = false;
-
 void SetIrqCall(int core)
 {
 	// reset by an irq disable/enable cycle, behaviour found by
@@ -116,7 +114,6 @@ void V_Core::Init(int index)
 	TADR = 0;
 	KeyOn = 0;
 
-	psxmode = false;
 	psxSoundDataTransferControl = 0;
 	psxSPUSTAT = 0;
 
@@ -294,8 +291,8 @@ void V_Voice::Stop()
 	ADSR.Phase = 0;
 }
 
-uint TickInterval = 768;
-static const int SanityInterval = 4800;
+#define TickInterval 768
+#define SanityInterval 4800
 
 __forceinline void TimeUpdate(u32 cClocks)
 {
@@ -324,7 +321,7 @@ __forceinline void TimeUpdate(u32 cClocks)
 		{
 			//ConLog("* SPU2: Irq Called (%04x) at cycle %d.\n", Spdif.Info, Cycles);
 			has_to_call_irq = false;
-         spu2Irq();
+			spu2Irq();
 		}
 
 		//Update DMA4 interrupt delay counter
@@ -371,10 +368,7 @@ __forceinline void TimeUpdate(u32 cClocks)
 		lClocks += TickInterval;
 		Cycles++;
 
-		// Note: IOP does not use MMX regs, so no need to save them.
-		//SaveMMXRegs();
 		Mix();
-		//RestoreMMXRegs();
 	}
 }
 
@@ -397,9 +391,7 @@ __forceinline void UpdateSpdifMode()
 	{
 		PlayMode = 0; //normal processing
 		if (Spdif.Out & SPDIF_OUT_PCM)
-		{
 			PlayMode = 1;
-		}
 	}
 }
 
@@ -464,7 +456,7 @@ void V_Core::WriteRegPS1(u32 mem, u16 value)
 				break;
 			}
 			case 0x4:
-				Voices[voice].Pitch = value & 0x3fff;
+				Voices[voice].Pitch = value;
 				//ConLog("voice %x Pitch write: %x\n", voice, Voices[voice].Pitch);
 				break;
 			case 0x6:
@@ -935,7 +927,7 @@ static void __fastcall RegWrite_VoiceParams(u16 value)
 		break;
 
 		case 2:
-			thisvoice.Pitch = value & 0x3fff;
+			thisvoice.Pitch = value;
 			break;
 
 		case 3: // ADSR1 (Envelope)
@@ -1269,7 +1261,8 @@ static void __fastcall RegWrite_Core(u16 value)
 			// adma isn't available in psx mode either
 			if (value == 32767)
 			{
-				psxmode = true;
+                                // psxmode is true here
+
 				//memset(_spu2mem, 0, 0x200000);
 				Cores[1].FxEnable = 0;
 				Cores[1].EffectsStartA = 0x7FFF8; // park core1 effect area in inaccessible mem

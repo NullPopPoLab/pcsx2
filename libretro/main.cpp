@@ -58,6 +58,7 @@ static bool init_failed = false;
 int option_upscale_mult = 1;
 int option_pad_left_deadzone = 0;
 int option_pad_right_deadzone = 0;
+bool option_palette_conversion = false;
 bool hack_fb_conversion = false;
 bool hack_AutoFlush = false;
 bool hack_fast_invalidation = false;
@@ -314,6 +315,7 @@ void retro_init(void)
 	// start init some core settings
 
 	option_upscale_mult = option_value(INT_PCSX2_OPT_UPSCALE_MULTIPLIER, KeyOptionInt::return_type);
+	option_palette_conversion = option_value(BOOL_PCSX2_OPT_PALETTE_CONVERSION, KeyOptionBool::return_type);
 	hack_fb_conversion = option_value(BOOL_PCSX2_OPT_USERHACK_FB_CONVERSION, KeyOptionBool::return_type);
 	hack_AutoFlush = option_value(BOOL_PCSX2_OPT_USERHACK_AUTO_FLUSH, KeyOptionBool::return_type);
 	hack_fast_invalidation = option_value(BOOL_PCSX2_OPT_USERHACK_FAST_INVALIDATION, KeyOptionBool::return_type);
@@ -826,10 +828,20 @@ bool retro_load_game(const struct retro_game_info* game)
 
 	retro_hw_context_type context_type = RETRO_HW_CONTEXT_OPENGL;
 	const char* option_renderer = option_value(STRING_PCSX2_OPT_RENDERER, KeyOptionString::return_type);
-	log_cb(RETRO_LOG_INFO, "options renderer: %s\n", option_renderer);
+	log_cb(RETRO_LOG_INFO, "Renderer option set to: %s\n", option_renderer);
 
-	if (! std::strcmp(option_renderer,"Auto"))
+	if (!std::strcmp(option_renderer,"Auto"))
+	{
 		environ_cb(RETRO_ENVIRONMENT_GET_PREFERRED_HW_RENDER, &context_type);
+		// Check if the selected video driver is supported, switch to OpenGL otherwise.
+		if (context_type != RETRO_HW_CONTEXT_NONE && set_hw_render(context_type))
+			return true;
+		else
+		{
+			context_type = RETRO_HW_CONTEXT_OPENGL;
+			log_cb(RETRO_LOG_INFO, "The video driver found is not compatible, switched to OpenGL.\n");
+		}
+	}
 #ifdef _WIN32
 	else if (!std::strcmp(option_renderer, "D3D11"))
 		context_type = RETRO_HW_CONTEXT_DIRECT3D;

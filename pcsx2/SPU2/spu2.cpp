@@ -23,9 +23,6 @@
 
 extern retro_audio_sample_t sample_cb;
 
-int Interpolation = 4;
-unsigned int delayCycles = 4;
-
 int SampleRate = 48000;
 
 u32 lClocks = 0;
@@ -109,8 +106,6 @@ s32 SPU2reset()
 
 s32 SPU2ps1reset()
 {
-	printf("RESET PS1 \n");
-
 	if (SampleRate != 44100)
 	{
 		SampleRate = 44100;
@@ -142,7 +137,6 @@ s32 SPU2init()
 {
 	assert(regtable[0x400] == nullptr);
 
-	Interpolation = 4;
 	VolumeAdjustCdb = 0;
 	VolumeAdjustFLdb = 0;
 	VolumeAdjustFRdb = 0;
@@ -151,7 +145,6 @@ s32 SPU2init()
 	VolumeAdjustSLdb = 0;
 	VolumeAdjustSRdb = 0;
 	VolumeAdjustLFEdb = 0;
-	delayCycles = 4;
 	VolumeAdjustC = powf(10, VolumeAdjustCdb / 10);
 	VolumeAdjustFL = powf(10, VolumeAdjustFLdb / 10);
 	VolumeAdjustFR = powf(10, VolumeAdjustFRdb / 10);
@@ -260,10 +253,7 @@ s32 SPU2freeze(int mode, freezeData* data)
 {
 	pxAssume(data != nullptr);
 	if (!data)
-	{
-		printf("SPU2 savestate null pointer!\n");
 		return -1;
-	}
 
 	if (mode == FREEZE_SIZE)
 	{
@@ -274,10 +264,7 @@ s32 SPU2freeze(int mode, freezeData* data)
 	pxAssume(mode == FREEZE_LOAD || mode == FREEZE_SAVE);
 
 	if (data->data == nullptr)
-	{
-		printf("SPU2 savestate null pointer!\n");
 		return -1;
-	}
 
 	SPU2Savestate::DataBlock& spud = (SPU2Savestate::DataBlock&)*(data->data);
 

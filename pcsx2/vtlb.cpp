@@ -41,8 +41,6 @@
 using namespace R5900;
 using namespace vtlb_private;
 
-#define verify pxAssert
-
 namespace vtlb_private
 {
 	__aligned(64) MapData vtlbdata;
@@ -57,7 +55,6 @@ static vtlbHandler UnmappedPhyHandler0;
 static vtlbHandler UnmappedPhyHandler1;
 
 vtlb_private::VTLBPhysical vtlb_private::VTLBPhysical::fromPointer(sptr ptr) {
-	pxAssertMsg(ptr >= 0, "Address too high");
 	return VTLBPhysical(ptr);
 }
 
@@ -66,45 +63,38 @@ vtlb_private::VTLBPhysical vtlb_private::VTLBPhysical::fromHandler(vtlbHandler h
 }
 
 vtlb_private::VTLBVirtual::VTLBVirtual(VTLBPhysical phys, u32 paddr, u32 vaddr) {
-	pxAssertMsg(0 == (paddr & VTLB_PAGE_MASK), "Should be page aligned");
-	pxAssertMsg(0 == (vaddr & VTLB_PAGE_MASK), "Should be page aligned");
-	pxAssertMsg((uptr)paddr < POINTER_SIGN_BIT, "Address too high");
-	if (phys.isHandler()) {
+	if (phys.isHandler())
 		value = phys.raw() + paddr - vaddr;
-	} else {
+	else
 		value = phys.raw() - vaddr;
-	}
 }
 
 __inline int CheckCache(u32 addr)
 {
-	u32 mask;
-
-	if(((cpuRegs.CP0.n.Config >> 16) & 0x1) == 0) 
+	// Data Cache Disabled ?
+	if(((cpuRegs.CP0.n.Config >> 16) & 0x1) != 0) 
 	{
-		//log_cb(RETRO_LOG_DEBUG, "Data Cache Disabled! %x\n", cpuRegs.CP0.n.Config);
-		return false;//
-	}
+		for(int i = 1; i < 48; i++)
+		{
+			if (((tlb[i].EntryLo1 & 0x38) >> 3) == 0x3) {
+				u32 mask  = tlb[i].PageMask;
 
-	for(int i = 1; i < 48; i++)
-	{
-		if (((tlb[i].EntryLo1 & 0x38) >> 3) == 0x3) {
-			mask  = tlb[i].PageMask;
-			
-			if ((addr >= tlb[i].PFN1) && (addr <= tlb[i].PFN1 + mask)) {
-				//log_cb(RETRO_LOG_DEBUG, "Yay! Cache check cache addr=%x, mask=%x, addr+mask=%x, VPN2=%x PFN0=%x\n", addr, mask, (addr & mask), tlb[i].VPN2, tlb[i].PFN0); 
-				return true;
+				if ((addr >= tlb[i].PFN1) && (addr <= tlb[i].PFN1 + mask)) {
+					//log_cb(RETRO_LOG_DEBUG, "Yay! Cache check cache addr=%x, mask=%x, addr+mask=%x, VPN2=%x PFN0=%x\n", addr, mask, (addr & mask), tlb[i].VPN2, tlb[i].PFN0); 
+					return true;
+				}
 			}
-		}
-		if (((tlb[i].EntryLo0 & 0x38) >> 3) == 0x3) {
-			mask  = tlb[i].PageMask;
-			
-			if ((addr >= tlb[i].PFN0) && (addr <= tlb[i].PFN0 + mask)) {
-				//log_cb(RETRO_LOG_DEBUG, "Yay! Cache check cache addr=%x, mask=%x, addr+mask=%x, VPN2=%x PFN0=%x\n", addr, mask, (addr & mask), tlb[i].VPN2, tlb[i].PFN0); 
-				return true;
+			if (((tlb[i].EntryLo0 & 0x38) >> 3) == 0x3) {
+				u32 mask  = tlb[i].PageMask;
+
+				if ((addr >= tlb[i].PFN0) && (addr <= tlb[i].PFN0 + mask)) {
+					//log_cb(RETRO_LOG_DEBUG, "Yay! Cache check cache addr=%x, mask=%x, addr+mask=%x, VPN2=%x PFN0=%x\n", addr, mask, (addr & mask), tlb[i].VPN2, tlb[i].PFN0); 
+					return true;
+				}
 			}
 		}
 	}
+
 	return false;
 }
 // --------------------------------------------------------------------------------------
@@ -247,20 +237,6 @@ template void vtlb_memWrite<mem32_t>(u32 mem, mem32_t data);
 //
 // Important recompiler note: Mid-block Exception handling isn't reliable *yet* because
 // memory ops don't flush the PC prior to invoking the indirect handlers.
-#ifndef NDEBUG
-static void GoemonTlbMissDebug()
-{
-	// 0x3d5580 is the address of the TLB cache
-	GoemonTlb* tlb = (GoemonTlb*)&eeMem->Main[0x3d5580];
-
-	for (u32 i = 0; i < 150; i++) {
-		if (tlb[i].valid == 0x1 && tlb[i].low_add != tlb[i].high_add)
-			log_cb(RETRO_LOG_DEBUG, "GoemonTlbMissDebug: Entry %d is valid. Key %x. From V:0x%8.8x to V:0x%8.8x (P:0x%8.8x)\n", i, tlb[i].key, tlb[i].low_add, tlb[i].high_add, tlb[i].physical_add);
-		else if (tlb[i].low_add != tlb[i].high_add)
-			log_cb(RETRO_LOG_DEBUG, "GoemonTlbMissDebug: Entry %d is invalid. Key %x. From V:0x%8.8x to V:0x%8.8x (P:0x%8.8x)\n", i, tlb[i].key, tlb[i].low_add, tlb[i].high_add, tlb[i].physical_add);
-	}
-}
-#endif
 
 void __fastcall GoemonPreloadTlb()
 {
@@ -316,11 +292,6 @@ void __fastcall GoemonUnloadTlb(u32 key)
 // Generates a tlbMiss Exception
 static __ri void vtlb_Miss(u32 addr,u32 mode)
 {
-#ifndef NDEBUG
-	if (EmuConfig.Gamefixes.GoemonTlbHack)
-		GoemonTlbMissDebug();
-#endif
-
 	// Hack to handle expected tlb miss by some games.
 	if (Cpu == &intCpu) {
 		if (mode)
@@ -331,18 +302,6 @@ static __ri void vtlb_Miss(u32 addr,u32 mode)
 		// Exception handled. Current instruction need to be stopped
 		throw Exception::CancelInstruction();
 	}
-
-#ifndef NDEBUG
-	{
-		static int spamStop = 0;
-		if ( spamStop++ < 50 )
-		{
-#if 0
-			log_cb(RETRO_LOG_ERROR, R5900Exception::TLBMiss( addr, !!mode ).FormatMessage().c_str() );
-#endif
-		}
-	}
-#endif
 }
 
 // BusError exception: more serious than a TLB miss.  If properly emulated the PS2 kernel
@@ -452,8 +411,6 @@ __ri void vtlb_ReassignHandler( vtlbHandler rv,
 							   vtlbMemR8FP* r8,vtlbMemR16FP* r16,vtlbMemR32FP* r32,vtlbMemR64FP* r64,vtlbMemR128FP* r128,
 							   vtlbMemW8FP* w8,vtlbMemW16FP* w16,vtlbMemW32FP* w32,vtlbMemW64FP* w64,vtlbMemW128FP* w128 )
 {
-	pxAssume(rv < VTLB_HANDLER_ITEMS);
-
 	vtlbdata.RWFT[0][0][rv] = (void*)((r8!=0)   ? r8	: vtlbDefaultPhyRead8);
 	vtlbdata.RWFT[1][0][rv] = (void*)((r16!=0)  ? r16	: vtlbDefaultPhyRead16);
 	vtlbdata.RWFT[2][0][rv] = (void*)((r32!=0)  ? r32	: vtlbDefaultPhyRead32);
@@ -500,11 +457,7 @@ __ri vtlbHandler vtlb_RegisterHandler(	vtlbMemR8FP* r8,vtlbMemR16FP* r16,vtlbMem
 // The memory region start and size parameters must be pagesize aligned.
 void vtlb_MapHandler(vtlbHandler handler, u32 start, u32 size)
 {
-	verify(0==(start&VTLB_PAGE_MASK));
-	verify(0==(size&VTLB_PAGE_MASK) && size>0);
-
 	u32 end = start + (size - VTLB_PAGE_SIZE);
-	pxAssume( (end>>VTLB_PAGE_BITS) < ArraySize(vtlbdata.pmap) );
 
 	while (start <= end)
 	{
@@ -515,16 +468,11 @@ void vtlb_MapHandler(vtlbHandler handler, u32 start, u32 size)
 
 void vtlb_MapBlock(void* base, u32 start, u32 size, u32 blocksize)
 {
-	verify(0==(start&VTLB_PAGE_MASK));
-	verify(0==(size&VTLB_PAGE_MASK) && size>0);
 	if(!blocksize)
 		blocksize = size;
-	verify(0==(blocksize&VTLB_PAGE_MASK) && blocksize>0);
-	verify(0==(size%blocksize));
 
 	sptr baseint = (sptr)base;
 	u32 end = start + (size - VTLB_PAGE_SIZE);
-	verify((end>>VTLB_PAGE_BITS) < ArraySize(vtlbdata.pmap));
 
 	while (start <= end)
 	{
@@ -544,12 +492,7 @@ void vtlb_MapBlock(void* base, u32 start, u32 size, u32 blocksize)
 
 void vtlb_Mirror(u32 new_region,u32 start,u32 size)
 {
-	verify(0==(new_region&VTLB_PAGE_MASK));
-	verify(0==(start&VTLB_PAGE_MASK));
-	verify(0==(size&VTLB_PAGE_MASK) && size>0);
-
 	u32 end = start + (size-VTLB_PAGE_SIZE);
-	verify((end>>VTLB_PAGE_BITS) < ArraySize(vtlbdata.pmap));
 
 	while(start <= end)
 	{
@@ -564,8 +507,7 @@ __fi void* vtlb_GetPhyPtr(u32 paddr)
 {
 	if (paddr>=VTLB_PMAP_SZ || vtlbdata.pmap[paddr>>VTLB_PAGE_BITS].isHandler())
 		return NULL;
-	else
-		return reinterpret_cast<void*>(vtlbdata.pmap[paddr>>VTLB_PAGE_BITS].assumePtr()+(paddr&VTLB_PAGE_MASK));
+	return reinterpret_cast<void*>(vtlbdata.pmap[paddr>>VTLB_PAGE_BITS].assumePtr()+(paddr&VTLB_PAGE_MASK));
 }
 
 __fi u32 vtlb_V2P(u32 vaddr)
@@ -579,10 +521,6 @@ __fi u32 vtlb_V2P(u32 vaddr)
 //TODO: Add invalid paddr checks
 void vtlb_VMap(u32 vaddr,u32 paddr,u32 size)
 {
-	verify(0==(vaddr&VTLB_PAGE_MASK));
-	verify(0==(paddr&VTLB_PAGE_MASK));
-	verify(0==(size&VTLB_PAGE_MASK) && size>0);
-
 	while (size > 0)
 	{
 		VTLBVirtual vmv;
@@ -609,9 +547,6 @@ void vtlb_VMap(u32 vaddr,u32 paddr,u32 size)
 
 void vtlb_VMapBuffer(u32 vaddr,void* buffer,u32 size)
 {
-	verify(0==(vaddr&VTLB_PAGE_MASK));
-	verify(0==(size&VTLB_PAGE_MASK) && size>0);
-
 	uptr bu8 = (uptr)buffer;
 	while (size > 0)
 	{
@@ -624,9 +559,6 @@ void vtlb_VMapBuffer(u32 vaddr,void* buffer,u32 size)
 
 void vtlb_VMapUnmap(u32 vaddr,u32 size)
 {
-	verify(0==(vaddr&VTLB_PAGE_MASK));
-	verify(0==(size&VTLB_PAGE_MASK) && size>0);
-
 	while (size > 0)
 	{
 
@@ -699,7 +631,7 @@ void vtlb_Term()
 	//nothing to do for now
 }
 
-constexpr size_t VMAP_SIZE = sizeof(VTLBVirtual) * VTLB_VMAP_ITEMS;
+static constexpr size_t VMAP_SIZE = sizeof(VTLBVirtual) * VTLB_VMAP_ITEMS;
 
 // Reserves the vtlb core allocation used by various emulation components!
 // [TODO] basemem - request allocating memory at the specified virtual location, which can allow
@@ -724,16 +656,23 @@ void vtlb_Core_Alloc()
 	}
 }
 
+static constexpr size_t PPMAP_SIZE = sizeof(*vtlbdata.ppmap) * VTLB_VMAP_ITEMS;
+
 // The LUT is only used for 1 game so we allocate it only when the gamefix is enabled (save 4MB)
 // However automatic gamefix is done after the standard init so a new init function was done.
 void vtlb_Alloc_Ppmap()
 {
-	if (vtlbdata.ppmap) return;
+	static u32* ppmap = nullptr;
 
-	vtlbdata.ppmap = (u32*)_aligned_malloc( VTLB_VMAP_ITEMS * sizeof(*vtlbdata.ppmap), 16 );
-	if (!vtlbdata.ppmap)
-		throw Exception::OutOfMemory( L"VTLB PS2 Virtual Address Translation LUT" )
-			.SetDiagMsg(pxsFmt("(%u megs)", VTLB_VMAP_ITEMS * sizeof(*vtlbdata.ppmap) / _1mb));
+	if (vtlbdata.ppmap)
+		return;
+
+	if (!ppmap)
+		ppmap = (u32*)_aligned_malloc( PPMAP_SIZE, 16 );
+
+	bool okay = HostSys::MmapCommitPtr(ppmap, PPMAP_SIZE, PageProtectionMode().Read().Write());
+	if (okay)
+		vtlbdata.ppmap = ppmap;
 
 	// By default a 1:1 virtual to physical mapping
 	for (u32 i = 0; i < VTLB_VMAP_ITEMS; i++)
@@ -742,11 +681,16 @@ void vtlb_Alloc_Ppmap()
 
 void vtlb_Core_Free()
 {
-	if (vtlbdata.vmap) {
+	if (vtlbdata.vmap)
+	{
 		HostSys::MmapResetPtr(vtlbdata.vmap, VMAP_SIZE);
 		vtlbdata.vmap = nullptr;
 	}
-	safe_aligned_free( vtlbdata.ppmap );
+	if (vtlbdata.ppmap)
+	{
+		HostSys::MmapResetPtr(vtlbdata.ppmap, PPMAP_SIZE);
+		vtlbdata.ppmap = nullptr;
+	}
 }
 
 // --------------------------------------------------------------------------------------

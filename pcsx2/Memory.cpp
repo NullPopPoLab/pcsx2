@@ -35,7 +35,6 @@ BIOS
 */
 
 #include "PrecompiledHeader.h"
-#include <wx/file.h>
 
 #include "IopCommon.h"
 #include "GS.h"
@@ -52,20 +51,6 @@ BIOS
 #include "Cache.h"
 #endif
 
-int MemMode = 0;		// 0 is Kernel Mode, 1 is Supervisor Mode, 2 is User Mode
-
-void memSetKernelMode() {
-	//Do something here
-	MemMode = 0;
-}
-
-void memSetSupervisorMode() {
-}
-
-void memSetUserMode() {
-
-}
-
 u16 ba0R16(u32 mem)
 {
 	//MEM_LOG("ba00000 Memory read16 address %x", mem);
@@ -77,16 +62,6 @@ u16 ba0R16(u32 mem)
 		return ba6;
 	}
 	return 0;
-}
-
-#define CHECK_MEM(mem) //MyMemCheck(mem)
-
-void MyMemCheck(u32 mem)
-{
-#ifndef NDEBUG
-    if( mem == 0x1c02f2a0 )
-        log_cb(RETRO_LOG_INFO, "yo; (mem == 0x1c02f2a0) in MyMemCheck...\n");
-#endif
 }
 
 /////////////////////////////
@@ -198,15 +173,6 @@ void memMapKernelMem()
 	vtlb_VMap(0x80000000, 0x00000000, _1mb*512);
 	//0xa* mirror
 	vtlb_VMap(0xA0000000, 0x00000000, _1mb*512);
-}
-
-//what do do with these ?
-void memMapSupervisorMem()
-{
-}
-
-void memMapUserMem()
-{
 }
 
 static mem8_t __fastcall nullRead8(u32 mem) {
@@ -843,9 +809,6 @@ void eeMemoryReserve::Reset()
 	memMapPhy();
 	memMapVUmicro();
 	memMapKernelMem();
-	memMapSupervisorMem();
-	memMapUserMem();
-	memSetKernelMode();
 
 	vtlb_VMap(0x00000000,0x00000000,0x20000000);
 	vtlb_VMapUnmap(0x20000000,0x60000000);
